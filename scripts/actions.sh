@@ -56,7 +56,9 @@ take_picture()
 
 create_variables()
 {
-    print=$(curl -H "X-Api-Key: $api_key" -s "http://127.0.0.1:$port/printer/objects/query?print_stats&virtual_sdcard&display_status&gcode_move&extruder=target,temperature&heater_bed=target,temperature")
+    # Добавлен heater_generic%20chamber в запрос
+    print=$(curl -H "X-Api-Key: $api_key" -s "http://127.0.0.1:$port/printer/objects/query?print_stats&virtual_sdcard&display_status&gcode_move&extruder=target,temperature&heater_bed=target,temperature&heater_generic%20chamber=temperature,target")
+
     #### Filename ####
     print_filename=$(echo "$print" | grep -oP '(?<="filename": ")[^"]*')
     filename=$(echo $print_filename | sed -f $DIR_TEL/scripts/url_escape.sed)
@@ -66,9 +68,11 @@ create_variables()
     else
         file=$(curl -H "X-Api-Key: $api_key" -s "http://127.0.0.1:$port/server/files/metadata?filename=$filename")
     fi
+
     #### Duration ####
     print_duration=$(echo "$print" | grep -oP '(?<="print_duration": )[^,]*')
     total_duration=$(echo "$print" | grep -oP '(?<="total_duration": )[^,]*')
+
     #### Progress ###
     gcode_start_byte=$(echo "$file" | grep -oP '(?<="gcode_start_byte": )[^,]*')
     gcode_end_byte=$(echo "$file" | grep -oP '(?<="gcode_end_byte": )[^,]*')
@@ -80,19 +84,40 @@ create_variables()
         gcode_length=$(echo "$gcode_end_byte-$gcode_start_byte" | bc -l)
         progress=$(echo "$positon_gcode/$gcode_length" | bc -l)
     fi
+
     #### Print_state ####
     print_state_read1=$(echo "$print" | grep -oP '(?<="state": ")[^"]*')
+
     #### Extruder Temps ####
     extruder=$(echo "$print" | grep -oP '(?<="extruder": {)[^}]*')
     extruder_target=$(echo "$extruder" | grep -oP '(?<="target": )[^,]*')
     extruder_temp1=$(echo "$extruder" | grep -oP '(?<="temperature": )[^,]*')
     extruder_temp=$(printf %.2f $extruder_temp1)
+
     #### Heater_Bed Temps ####
     heater_bed=$(echo "$print" | grep -oP '(?<="heater_bed": {)[^}]*')
     bed_target=$(echo "$heater_bed" | grep -oP '(?<="target": )[^,]*')
     bed_temp1=$(echo "$heater_bed" | grep -oP '(?<="temperature": )[^,]*')
     if [ "$bed_temp1" != "null" ]; then
         bed_temp=$(printf %.2f $bed_temp1)
+    fi
+
+    #### Chamber Temps ####
+    chamber_block=$(echo "$print" | grep -oP '(?<="heater_generic chamber": {)[^}]*')
+    if [ -n "$chamber_block" ]; then
+        chamber_temp1=$(echo "$chamber_block" | grep -oP '(?<="temperature": )[^,]*')
+        if [ "$chamber_temp1" != "null" ] && [ -n "$chamber_temp1" ]; then
+            chamber_temp=$(printf %.2f $chamber_temp1)
+        else
+            chamber_temp="N/A"
+        fi
+        chamber_target=$(echo "$chamber_block" | grep -oP '(?<="target": )[^,]*')
+        if [ "$chamber_target" = "null" ] || [ -z "$chamber_target" ]; then
+            chamber_target="N/A"
+        fi
+    else
+        chamber_temp="N/A"
+        chamber_target="N/A"
     fi
 
     if [ -z "$file" ]; then
@@ -116,7 +141,6 @@ create_variables()
         else
             current_layer=1
         fi
-
 
         layer1=$(echo "scale=0; $object_height-$first_layer_height" | bc -l)
         layer2=$(echo "scale=0; $layer1/$layer_height" | bc -l)
@@ -150,7 +174,7 @@ create_variables()
 
     remaining1=$(printf "%.0f" $math4)
     total_remaining=$(printf '%02d:%02d:%02d\n' $(($remaining1/3600)) $(($remaining1%3600/60)) $(($remaining1%60)))
-    
+
     remaining2=$(printf "%.0f" $math8)
     calculate_remaining=$(printf '%02d:%02d:%02d\n' $(($remaining2/3600)) $(($remaining2%3600/60)) $(($remaining2%60)))
 

@@ -51,7 +51,7 @@ elif [ "$state_msg" = "4" ]; then
 
 elif [ "$state_msg" = "5" ]; then
     if [ "$print_state_read1" = "printing" ]; then
-        msg="$msg_state"
+        msg=$(printf '%b' "$msg_state")
         if [ "$pic_state" = "0" ]; then
             picture="0"
             gif="0"
@@ -60,7 +60,7 @@ elif [ "$state_msg" = "5" ]; then
             gif_enable="1"
         fi
     elif [ "$print_state_read1" = "standby" ]; then
-        msg="$msg_standby"
+        msg=$(printf '%b' "$msg_standby")
         if [ "$pic_standby" = "0" ]; then
             picture="0"
             gif="0"
