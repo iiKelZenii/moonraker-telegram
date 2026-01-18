@@ -56,10 +56,10 @@ take_picture()
 
 create_variables()
 {
-    # add heater generic in request
+    # Add heater_generic chamber to Moonraker query
     print=$(curl -H "X-Api-Key: $api_key" -s "http://127.0.0.1:$port/printer/objects/query?print_stats&virtual_sdcard&display_status&gcode_move&extruder=target,temperature&heater_bed=target,temperature&heater_generic%20chamber=temperature,target")
 
-    #### Filename ####
+    # Filename from print_stats
     print_filename=$(echo "$print" | grep -oP '(?<="filename": ")[^"]*')
     filename=$(echo $print_filename | sed -f $DIR_TEL/scripts/url_escape.sed)
 
@@ -69,12 +69,11 @@ create_variables()
         file=$(curl -H "X-Api-Key: $api_key" -s "http://127.0.0.1:$port/server/files/metadata?filename=$filename")
     fi
 
-    #### Duration ####
+    # Print durations
     print_duration=$(echo "$print" | grep -oP '(?<="print_duration": )[^,]*')
     total_duration=$(echo "$print" | grep -oP '(?<="total_duration": )[^,]*')
 
-    #### Progress ###
-    # using progress direct from virtual_sdcard
+    # Get progress directly from virtual_sdcard
     progress_raw=$(echo "$print" | grep -oP '"virtual_sdcard":\s*{[^}]*"progress":\s*([0-9.]+)' | grep -oP '([0-9.]+)$')
     if [ -z "$progress_raw" ] || [ "$progress_raw" = "null" ]; then
         progress_raw="0"
@@ -84,16 +83,16 @@ create_variables()
     fi
     progress=$progress_raw
 
-    #### Print_state ####
+    # Printer state
     print_state_read1=$(echo "$print" | grep -oP '(?<="state": ")[^"]*')
 
-    #### Extruder Temps ####
+    # Extruder temperatures
     extruder=$(echo "$print" | grep -oP '(?<="extruder": {)[^}]*')
     extruder_target=$(echo "$extruder" | grep -oP '(?<="target": )[^,]*')
     extruder_temp1=$(echo "$extruder" | grep -oP '(?<="temperature": )[^,]*')
     extruder_temp=$(printf %.2f $extruder_temp1)
 
-    #### Heater_Bed Temps ####
+    # Heater bed temperatures
     heater_bed=$(echo "$print" | grep -oP '(?<="heater_bed": {)[^}]*')
     bed_target=$(echo "$heater_bed" | grep -oP '(?<="target": )[^,]*')
     bed_temp1=$(echo "$heater_bed" | grep -oP '(?<="temperature": )[^,]*')
@@ -101,7 +100,7 @@ create_variables()
         bed_temp=$(printf %.2f $bed_temp1)
     fi
 
-    #### Chamber Temps ####
+    # Chamber temperatures
     chamber_block=$(echo "$print" | grep -oP '(?<="heater_generic chamber": {)[^}]*')
     if [ -n "$chamber_block" ]; then
         chamber_temp1=$(echo "$chamber_block" | grep -oP '(?<="temperature": )[^,]*')
@@ -119,42 +118,29 @@ create_variables()
         chamber_target="N/A"
     fi
 
-    #### Layer & Z Height (only if metadata available) ####
-    current_layer="N/A"
-    layers="N/A"
+    # Z Height from gcode_position (always available)
     z_current="N/A"
-
-    if [ -n "$file" ]; then
-        layer_height=$(echo "$file" | grep -oP '(?<="layer_height": )[^,]*')
-        first_layer_height=$(echo "$file" | grep -oP '(?<="first_layer_height": )[^,]*')
-        object_height=$(echo "$file" | grep -oP '(?<="object_height": )[^,]*')
-        gcode_position=$(echo "$print" | grep -oP '(?<="gcode_position": )[^"]*')
+    gcode_position=$(echo "$print" | grep -oP '(?<="gcode_position": )[^"]*')
+    if [ -n "$gcode_position" ]; then
         gcode_position="${gcode_position// /}"
         IFS=',' read -r -a array <<< "$gcode_position"
         z_current=$(echo "${array[2]}")
-
-        if (( $(echo "$z_current > $first_layer_height" | bc -l) )); then
-            layer1=$(echo "scale=0; $z_current-$first_layer_height" | bc -l)
-            layer2=$(echo "scale=0; $layer1/$layer_height" | bc -l)
-            current_layer=$(echo "scale=0; $layer2+1" | bc -l)
-        else
-            current_layer=1
-        fi
-
-        layer1=$(echo "scale=0; $object_height-$first_layer_height" | bc -l)
-        layer2=$(echo "scale=0; $layer1/$layer_height" | bc -l)
-        layers=$(echo "scale=0; $layer2+1" | bc -l)
-    else
-        # if no metadata get Z from gcode_position
-        gcode_position=$(echo "$print" | grep -oP '(?<="gcode_position": )[^"]*')
-        if [ -n "$gcode_position" ]; then
-            gcode_position="${gcode_position// /}"
-            IFS=',' read -r -a array <<< "$gcode_position"
-            z_current=$(echo "${array[2]}")
-        fi
     fi
 
-    #### Remaining to H M S ####
+    # Layer info from print_stats (reliable source)
+    current_layer="N/A"
+    layers="N/A"
+    current_layer_raw=$(echo "$print" | grep -oP '"current_layer":\s*([0-9]+)' | head -1 | cut -d: -f2)
+    total_layer_raw=$(echo "$print" | grep -oP '"total_layer":\s*([0-9]+)' | head -1 | cut -d: -f2)
+
+    if [ -n "$current_layer_raw" ] && [ "$current_layer_raw" != "null" ]; then
+        current_layer=$current_layer_raw
+    fi
+    if [ -n "$total_layer_raw" ] && [ "$total_layer_raw" != "null" ]; then
+        layers=$total_layer_raw
+    fi
+
+    # Remaining time calculations
     if [ "$print_duration" = "0.0" ] || [ "$(echo "$progress <= 0.001" | bc -l)" -eq 1 ]; then
         math2="0"
         math4="0"
@@ -180,14 +166,14 @@ create_variables()
     remaining2=$(printf "%.0f" $math8)
     calculate_remaining=$(printf '%02d:%02d:%02d' $(($remaining2/3600)) $(($remaining2%3600/60)) $(($remaining2%60)))
 
-    #### Current to H M S ####
+    # Format current times
     current=$(printf "%.0f" $print_duration)
     print_current=$(printf '%02d:%02d:%02d' $(($current/3600)) $(($current%3600/60)) $(($current%60)))
 
     current1=$(printf "%.0f" $total_duration)
     total_current=$(printf '%02d:%02d:%02d' $(($current1/3600)) $(($current1%3600/60)) $(($current1%60)))
 
-    #### Progress to % ####
+    # Format progress percentage
     print_progress1=$(echo "scale=1; $progress * 100" | bc -l 2>/dev/null)
     if [ -z "$print_progress1" ]; then
         print_progress1="0.0"
