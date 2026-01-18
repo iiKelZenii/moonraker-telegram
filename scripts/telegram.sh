@@ -19,7 +19,7 @@ custom_picture="$2"
 gif_enable=0
 
 if [ "$state_msg" = "1" ]; then
-    msg="$msg_start"
+    msg=$(printf '%b' "$msg_start")
     if [ "$pic_start" = "0" ]; then
         picture="0"
         gif="0"
@@ -27,7 +27,7 @@ if [ "$state_msg" = "1" ]; then
     sleep $delay_start_msg
 
 elif [ "$state_msg" = "2" ]; then
-    msg="$msg_end"
+    msg=$(printf '%b' "$msg_end")
     if [ "$pic_end" = "0" ]; then
         picture="0"
         gif="0"
@@ -35,7 +35,7 @@ elif [ "$state_msg" = "2" ]; then
     sleep $delay_end_msg
 
 elif [ "$state_msg" = "3" ]; then
-    msg="$msg_pause"
+    msg=$(printf '%b' "$msg_pause")
     if [ "$pic_pause" = "0" ]; then
         picture="0"
         gif="0"
@@ -43,7 +43,7 @@ elif [ "$state_msg" = "3" ]; then
     sleep $delay_pause_msg
 
 elif [ "$state_msg" = "4" ]; then
-    msg="$msg_error"
+    msg=$(printf '%b' "$msg_error")
     if [ "$pic_error" = "0" ]; then
         picture="0"
         gif="0"
@@ -66,24 +66,25 @@ elif [ "$state_msg" = "5" ]; then
             gif="0"
         fi
     elif [ "$print_state_read1" = "complete" ]; then
-        msg="$msg_complete"
+        msg=$(printf '%b' "$msg_complete")
         if [ "$pic_complete" = "0" ]; then
             picture="0"
             gif="0"
         fi
     elif [ "$print_state_read1" = "paused" ]; then
-        msg="$msg_paused"
+        msg=$(printf '%b' "$msg_paused")
         if [ "$pic_paused" = "0" ]; then
             picture="0"
             gif="0"
         fi
     elif [ "$print_state_read1" = "error" ]; then
-        msg="$msg_error"
+        msg=$(printf '%b' "$msg_error")
         if [ "$pic_error" = "0" ]; then
             picture="0"
             gif="0"
         fi
     fi
+
 elif [ "$state_msg" = "6" ]; then
     msg="Available commands are:
   --------------------------------------------
@@ -98,9 +99,9 @@ elif [ "$state_msg" = "6" ]; then
 /gif - Send a 5 second gif
 /host - Restart Firmware or Klipper and reboot and shutdown of the Host
 /timelapse - download files from timelpase plugin by selection
-  --------------------------------------------  
+  --------------------------------------------
 you have further questions then please look first in the Faq:
-https://github.com/Raabi91/moonraker-telegram/blob/master/docs/FAQ.md"
+https://github.com/Raabi91/moonraker-telegram/blob/master/docs/FAQ.md  "
 
     curl -s -X POST \
         ${tokenurl}/sendMessage \
@@ -109,13 +110,14 @@ https://github.com/Raabi91/moonraker-telegram/blob/master/docs/FAQ.md"
     msg=""
 
 elif [ "$state_msg" = "7" ]; then
-    msg="$msg_bed_cooldown"
+    msg=$(printf '%b' "$msg_bed_cooldown")
     if [ "$pic_bed_cooldown" = "0" ]; then
         picture="0"
         gif="0"
     fi
 
 else
+    #
     if [ "$custom_picture" = "1" ]; then
         rm $DIR_TEL/picture/cam_new*.jpg
         light_on
@@ -126,7 +128,7 @@ else
             array=$((array+1))
         done
         light_off
-        msg="$state_msg"
+        msg="$state_msg"  #
         picture_number=0
         webcams=$(echo "${#webcam[@]}")
         if [ "$webcams" == "1" ]; then
@@ -142,9 +144,9 @@ else
             sleep 0.1
           done
         elif [ "$webcams" != "1" ]; then
-          for filename in $DIR_TEL/picture/cam_new*; do            
+          for filename in $DIR_TEL/picture/cam_new*; do
               if [ "$picture_number" == "0" ]; then
-                  media='{"type":"photo","media":"attach://photo_'$picture_number'"}' 
+                  media='{"type":"photo","media":"attach://photo_'$picture_number'"}'
                   photos="photo_$picture_number=@$filename"
               elif [ "$picture_number" != "0" ]; then
                   media=$media',{"type":"photo","media":"attach://photo_'$picture_number'"}'
@@ -152,8 +154,8 @@ else
               fi
             picture_number=$((picture_number+1))
             sleep 0.1
-          done 
-            if [ "$msg" != "" ]; then 
+          done
+            if [ "$msg" != "" ]; then
               curl -s -X POST \
                 ${tokenurl}/sendMediaGroup \
                 -F chat_id="${chatid}" \
@@ -164,18 +166,18 @@ else
                 ${tokenurl}/sendMessage \
                 -d text="${msg}" \
                 -d chat_id="${chatid}"
-            else 
+            else
               curl -s -X POST \
                 ${tokenurl}/sendMediaGroup \
                 -F chat_id="${chatid}" \
                 -F media='['$media']' \
                 -F $photos
-            fi   
-        fi 
-                
+            fi
+        fi
+
         rm $DIR_TEL/picture/cam_new*.jpg
     else
-        msg="$state_msg"
+        msg="$state_msg"  #
         curl -s -X POST \
             ${tokenurl}/sendMessage \
             -d text="${msg}" \
@@ -185,6 +187,7 @@ else
     exit 0
 fi
 
+#
 if [[ -n "${msg}" ]]; then
     if [ "$picture" = "1" ]; then
         rm $DIR_TEL/picture/cam_new*.jpg
@@ -212,9 +215,9 @@ if [[ -n "${msg}" ]]; then
             sleep 0.1
           done
         elif [ "$webcams" != "1" ]; then
-          for filename in $DIR_TEL/picture/cam_new*; do            
+          for filename in $DIR_TEL/picture/cam_new*; do
               if [ "$picture_number" == "0" ]; then
-                  media='{"type":"photo","media":"attach://photo_'$picture_number'"}' 
+                  media='{"type":"photo","media":"attach://photo_'$picture_number'"}'
                   photos="photo_$picture_number=@$filename"
               elif [ "$picture_number" != "0" ]; then
                   media=$media',{"type":"photo","media":"attach://photo_'$picture_number'"}'
@@ -222,7 +225,7 @@ if [[ -n "${msg}" ]]; then
               fi
             picture_number=$((picture_number+1))
             sleep 0.1
-          done 
+          done
               curl -s -X POST \
                 ${tokenurl}/sendMediaGroup \
                 -F chat_id="${chatid}" \
@@ -233,24 +236,22 @@ if [[ -n "${msg}" ]]; then
                 ${tokenurl}/sendMessage \
                 -d text="${msg}" \
                 -d chat_id="${chatid}"
-        fi 
-                
-        rm $DIR_TEL/picture/cam_new*.jpg
-        
-    elif [ "$picture" = "0" ]; then
+        fi
 
+        rm $DIR_TEL/picture/cam_new*.jpg
+
+    elif [ "$picture" = "0" ]; then
         curl -s -X POST \
             ${tokenurl}/sendMessage \
             -d text="${msg}" \
             -d chat_id="${chatid}"
-
     fi
+
     echo "Send MSG = $msg" >> "$log/$multi_instanz.log"
+
     if [ "$gif_enable" = "1" ]; then
         bash "$DIR_TEL/scripts/gif.sh"
     fi
-
 fi
-
 
 exit 0

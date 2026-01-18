@@ -56,7 +56,7 @@ take_picture()
 
 create_variables()
 {
-    # Добавлен heater_generic%20chamber в запрос
+    # add heater generic in request
     print=$(curl -H "X-Api-Key: $api_key" -s "http://127.0.0.1:$port/printer/objects/query?print_stats&virtual_sdcard&display_status&gcode_move&extruder=target,temperature&heater_bed=target,temperature&heater_generic%20chamber=temperature,target")
 
     #### Filename ####
@@ -74,16 +74,15 @@ create_variables()
     total_duration=$(echo "$print" | grep -oP '(?<="total_duration": )[^,]*')
 
     #### Progress ###
-    gcode_start_byte=$(echo "$file" | grep -oP '(?<="gcode_start_byte": )[^,]*')
-    gcode_end_byte=$(echo "$file" | grep -oP '(?<="gcode_end_byte": )[^,]*')
-    file_position=$(echo "$print" | grep -oP '(?<="file_position": )[^,]*')
-    if [ "$file_position" -gt "$gcode_end_byte" ]; then
-        progress="1"
-    else
-        positon_gcode=$(echo "$file_position-$gcode_start_byte" | bc -l)
-        gcode_length=$(echo "$gcode_end_byte-$gcode_start_byte" | bc -l)
-        progress=$(echo "$positon_gcode/$gcode_length" | bc -l)
+    # using progress direct from virtual_sdcard
+    progress_raw=$(echo "$print" | grep -oP '"virtual_sdcard":\s*{[^}]*"progress":\s*([0-9.]+)' | grep -oP '([0-9.]+)$')
+    if [ -z "$progress_raw" ] || [ "$progress_raw" = "null" ]; then
+        progress_raw="0"
     fi
+    if ! [[ "$progress_raw" =~ ^[0-9]*\.?[0-9]+$ ]]; then
+        progress_raw="0"
+    fi
+    progress=$progress_raw
 
     #### Print_state ####
     print_state_read1=$(echo "$print" | grep -oP '(?<="state": ")[^"]*')
@@ -120,9 +119,12 @@ create_variables()
         chamber_target="N/A"
     fi
 
-    if [ -z "$file" ]; then
-        echo "file is empty"
-    else
+    #### Layer & Z Height (only if metadata available) ####
+    current_layer="N/A"
+    layers="N/A"
+    z_current="N/A"
+
+    if [ -n "$file" ]; then
         layer_height=$(echo "$file" | grep -oP '(?<="layer_height": )[^,]*')
         first_layer_height=$(echo "$file" | grep -oP '(?<="first_layer_height": )[^,]*')
         object_height=$(echo "$file" | grep -oP '(?<="object_height": )[^,]*')
@@ -130,9 +132,6 @@ create_variables()
         gcode_position="${gcode_position// /}"
         IFS=',' read -r -a array <<< "$gcode_position"
         z_current=$(echo "${array[2]}")
-
-        echo "$z_current"
-        echo "$first_layer_height"
 
         if (( $(echo "$z_current > $first_layer_height" | bc -l) )); then
             layer1=$(echo "scale=0; $z_current-$first_layer_height" | bc -l)
@@ -145,47 +144,53 @@ create_variables()
         layer1=$(echo "scale=0; $object_height-$first_layer_height" | bc -l)
         layer2=$(echo "scale=0; $layer1/$layer_height" | bc -l)
         layers=$(echo "scale=0; $layer2+1" | bc -l)
-    fi
-
-    #### Remaining to H M S ####
-    if [ "$print_duration" = "0.0" ]; then
-        math2="0"
     else
-        if [ "$progress" <= "0.0" ]; then
-            math2="0"
-            math4="0"
-            math8="0"
-        else
-            math1=$(echo "scale=0; $print_duration/$progress" | bc -l)
-            math2=$(echo "scale=0; $math1-$print_duration" | bc -l)
-
-            math3=$(echo "scale=0; $total_duration/$progress" | bc -l)
-            math4=$(echo "scale=0; $math3-$print_duration" | bc -l)
-
-            math5=$(echo "scale=0; $total_duration+$print_duration" | bc -l)
-            math6=$(echo "scale=0; $math5/2" | bc -l)
-            math7=$(echo "scale=0; $math6/$progress" | bc -l)
-            math8=$(echo "scale=0; $math7-$math6" | bc -l)
+        # if no metadata get Z from gcode_position
+        gcode_position=$(echo "$print" | grep -oP '(?<="gcode_position": )[^"]*')
+        if [ -n "$gcode_position" ]; then
+            gcode_position="${gcode_position// /}"
+            IFS=',' read -r -a array <<< "$gcode_position"
+            z_current=$(echo "${array[2]}")
         fi
     fi
 
+    #### Remaining to H M S ####
+    if [ "$print_duration" = "0.0" ] || [ "$(echo "$progress <= 0.001" | bc -l)" -eq 1 ]; then
+        math2="0"
+        math4="0"
+        math8="0"
+    else
+        math1=$(echo "scale=10; $print_duration / $progress" | bc -l)
+        math2=$(echo "scale=0; $math1 - $print_duration" | bc -l)
+
+        math3=$(echo "scale=10; $total_duration / $progress" | bc -l)
+        math4=$(echo "scale=0; $math3 - $print_duration" | bc -l)
+
+        math5=$(echo "scale=10; ($total_duration + $print_duration) / 2" | bc -l)
+        math6=$(echo "scale=10; $math5 / $progress" | bc -l)
+        math8=$(echo "scale=0; $math6 - $math5" | bc -l)
+    fi
+
     remaining=$(printf "%.0f" $math2)
-    print_remaining=$(printf '%02d:%02d:%02d\n' $(($remaining/3600)) $(($remaining%3600/60)) $(($remaining%60)))
+    print_remaining=$(printf '%02d:%02d:%02d' $(($remaining/3600)) $(($remaining%3600/60)) $(($remaining%60)))
 
     remaining1=$(printf "%.0f" $math4)
-    total_remaining=$(printf '%02d:%02d:%02d\n' $(($remaining1/3600)) $(($remaining1%3600/60)) $(($remaining1%60)))
+    total_remaining=$(printf '%02d:%02d:%02d' $(($remaining1/3600)) $(($remaining1%3600/60)) $(($remaining1%60)))
 
     remaining2=$(printf "%.0f" $math8)
-    calculate_remaining=$(printf '%02d:%02d:%02d\n' $(($remaining2/3600)) $(($remaining2%3600/60)) $(($remaining2%60)))
+    calculate_remaining=$(printf '%02d:%02d:%02d' $(($remaining2/3600)) $(($remaining2%3600/60)) $(($remaining2%60)))
 
     #### Current to H M S ####
     current=$(printf "%.0f" $print_duration)
-    print_current=$(printf '%02d:%02d:%02d\n' $(($current/3600)) $(($current%3600/60)) $(($current%60)))
+    print_current=$(printf '%02d:%02d:%02d' $(($current/3600)) $(($current%3600/60)) $(($current%60)))
 
     current1=$(printf "%.0f" $total_duration)
-    total_current=$(printf '%02d:%02d:%02d\n' $(($current1/3600)) $(($current1%3600/60)) $(($current1%60)))
+    total_current=$(printf '%02d:%02d:%02d' $(($current1/3600)) $(($current1%3600/60)) $(($current1%60)))
 
     #### Progress to % ####
-    print_progress1=$(echo "scale=1; $progress*100" | bc )
+    print_progress1=$(echo "scale=1; $progress * 100" | bc -l 2>/dev/null)
+    if [ -z "$print_progress1" ]; then
+        print_progress1="0.0"
+    fi
     print_progress=$(printf "%.1f" $print_progress1)%
 }
